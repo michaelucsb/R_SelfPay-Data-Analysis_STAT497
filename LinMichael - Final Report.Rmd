@@ -1,0 +1,300 @@
+# Improving Self-Pay Patient Collections
+```{r}
+## Michael Lin
+## 04/21/2014
+## STAT 497R
+## FINAL PROJECT
+```
+
+========================================================
+
+## Project Proposal
+
+### Introduction
+The U.S. healthcare industry is currently going through a major transition.  To the hospitals, payments from the less profitable government funded programs, i.e. Medicare and Medicaid, are projected to surpass that of the more profitable commercial insurance programs.  Hospital CEO and CFO are increasingly pressured to improve the operations of their organizations in order hold on to their bottom line and profit margins.  One way to do this is to improve self-pay patient collections. According to HFMA, one of the major issues among healthcare organizations is that "90% to 95% of self-pay patient bills (after government programs or charity assistance) are written off as bad debt," and if the hospitals can improve their self-pay patient collections, e.g. charging patients identified as unlikely to pay their medical bills at the point of registration or check-in, those additional revenues will drop directly to hospitals' bottom lines.  Hence, it would be tremendous valuable for the CEO and CFO to be able to identify whether a patient is likely to pay their own portion of the medical bills as early as possible.
+
+### Data Description:
+The data includes about 5,500 self-pay patient's records from the demo site of my company's revenue cycle management solution.  The data include information from hospital's patient accounting systems (patient/guarantor info, insurance plan, self-pay balances, amount paid), 3rd party scoring (demographic information, credit scores), and much more. The data include all patients admitted to the hospital in the month of May 2010, and the snapshot of this data is taken at the date of May 29th, 2011; hence, the outstanding balances within these accounts have not been paid off for at least or more than 365 days - marking them highly unlikely to be collected by the hospital.
+
+A quick note about the data: the data has been "scrubbed" to ensure compliance to HIPPA policies.  This means that none of the information can be used to identify individual information.  All the records have been masked with fake information (i.e. fake names, fake address, fake SSN, etc.), and the dates and dollar amounts have been altered so that the they are no longer equivalent to the original values, but they are still within the approximate range of the original values so that it can be used to conduct meaningful analyses and trend observations.  I also have to ask Professor Nord to destroy the raw data once the project is graded.
+
+### Project Goals:
+1. Explore, clean up, and transform the data to make it useful for R analyses
+2. Find out what variables are useful to identify whether a patient is likely or unlikely to pay their medical bills.  I imagine there will be correlation analysis, linear regression analysis, and/or ANOVA.  (I can't decide yet until exploring the data more).
+3. The deliverables of the project will recommend ways for hospitals to identify patients with low payment likelihood.
+
+---
+
+## Final Project
+
+### I. Introduction
+
+This paper will set out to conduct data exploration and analysis to identify if there is any useful variable availabie within hospitals' patient accounting system to predict whether a member is likely to pay their self-pay bill balances.  As described in the proposal, the data is extracted from the demo site of my company's old revenue cycle management solution.  All data has been encrpted to compliant with the privacy laws.
+
+Upon examing the data more closely.  There are a lot of "fake data" that is unusable; meanwhle, there isn't a lot of credit score available from the data to make it a meaning analysis specifically using the credit score as a predictor.  However, there are many other variables that are worth the look.
+
+Because the raw data contains over 100 variable/columns, the scope of the project could be endless with my limited knowledge of R thus far.  As you will find in this report, we limited this project into three parts specifically using R:
+
+1. **Data Import and Cleanup** - in this section we imported the data into R and cleaned up the data a bit as well as created a few calculated fields in order to make the data more useful.
+2. **Data Exporation** - in this section we explored the data a bit as well as reduced the number record we use throughout the majority of the analysis portion.
+3. **Data Analysis** - in this section, we conducted various analysis on variables individually against the two response variables.  The two response variables are "Current Outstanding Balance" (numeric) and "Whether Paid in Full" (factor - yes/no).  The reason we had to use "Current Outstanding Balance" because there are instants we are not entirely sure how to use a quantitative variable to predict a qualitative variable; otherwise, we would prefer to use "Whether Paid in Full" (factor - yes/no) as the sole response variable.  Meanwhile, we avoided using multiple predictors as the task could become exponentially time consuming.
+
+Finally, we'll deliver some recommendation based on our findings as well as some thoughts regarding what the next steps should be beyond the scope of this project.
+
+### II. Part 1 - Data Cleanup and Import
+
+The raw data we downloaded contains a total of 114 columns/attributes.  Many of which are not useful to our analysis or even inaccurate due to encryption, missing data, and inaccurate data sent directly from hospital patient accounting system.  Hence we narrowed it down to 35 columns for analysis.  However, note that we won't be using all of the columns in our report as it still would be too time consuming (and some columns seems to still missing significant portion of data).  In addition, we converted some column formatting to make sure R can read in each numeric columns as numeric.  Then we imported the data.  Here is a list of all the 35 columns we chose.
+
+```{r load-data}
+spdata <- read.csv("C:/Users/Michael Lin_2/Google Drive/My Academic Files/01 Penn State/Spring 2014/STAT 497R - Topics in R Statistical Language/Project/project_data.csv", na.strings="NA", comment.char = "#")
+colnames(spdata)
+```
+
+After loading the data, we realized that date fields are not stored as date, we then converted all date colums into date format.  Finally, we added in a new factor column to indicate whether the account has a zero outstanding balance with the name `$fully.paid`.  This column is one of the two response variable, as we are assuming that if there is any outstanding balance left from May 2010 admission date, chances are the patient will not be paying that outstanding balance unless it was send (or sold) to a collection agency.  With `$fully.paid`, each zero balance account is written with a "yes" and each account with balance > 0 is written with a "no".  Here's the final result we will work with with.
+
+```{r}
+spdata$Admit.Date <- as.Date(spdata$Admit.Date, format = "%m/%d/%Y")
+spdata$Disch.Date <- as.Date(spdata$Disch.Date, format = "%m/%d/%Y")
+spdata$Last.Pmt.Date <- as.Date(spdata$Last.Pmt.Date, format = "%m/%d/%Y")
+spdata$Fin.Bill.Date <- as.Date(spdata$Fin.Bill.Date, format = "%m/%d/%Y")
+spdata$Bad.Debt.Txn.Date <- as.Date(spdata$Bad.Debt.Txn.Date, format = "%m/%d/%Y")
+spdata$Zero.Date <- as.Date(spdata$Zero.Date, format = "%m/%d/%Y")
+spdata$fully.paid <- cut(spdata$Cur.Bal, breaks = c(-200,0,23000))
+levels(spdata$fully.paid) <- c("yes","no")
+str(spdata, vec.len = 1)
+```
+
+Finally, we realized that the variable "Previous Times of Bad Debt" has a lot of `NA` as they all should be `0`.  Hence, we use the following to convert all `NA` to `zero`.
+
+```{r}
+spdata[which(is.na(spdata$Previous.Times.to.Bad.Debt)),24] <- 0
+```
+
+
+---
+
+### Part 2 - Data Exploration
+
+#### 2.1 Narrow Down the Data Set
+
+We know that the data contains both zero-balance and non-zero balance accounts.  There are 4257 records that have a zero balance using `sum(spdata$fully.paid=="yes")` and 1227 records that have a non-zero balance using `sum(spdata$fully.paid=="no")` - the majority of the record has zero balance.  Knowing that, it makes sense to plot the data by excluding the zero balance accounts at the exporation stage just so that the zero balance record would not skew the look of charts (as zero-balance will significant influience the means and etc.).
+
+```{r fig.width=5, fig.height=5}
+boxplot(spdata$Cur.Bal[which(spdata$Cur.Bal != 0)], xlab="Non-Zero Balance Accounts", ylab="Current Outstanding Balance$")
+```
+
+From this boxplot, we can see that the majority of the data has a current balance of smaller than 1000; therefore, we think it's a good idea to break the data into different sizes to analyze.  We decided to write two additional variables using breakpoints on "Total Hospital Charges" and "Current Outstanding Balance".  Note that there are some negative outstanding balance because sometimes people overpaid their bills or adjustment was corrected after payment.
+
+Using the variable "Total Charges", we defined a new variable "Charge Size" with the following rules:
+1. "zero", where total charges is smaller or equal to 0
+2. "low", where total charges is between 0 and 2,000
+3. "med", where total charges is between 2,000 and 10,000
+4. "high", where total charges is between 350,000
+
+```{r fig.width=5, fig.height=5}
+summary(spdata$Tot.Chgs)
+spdata$chg.size <- cut(spdata$Tot.Chgs, breaks = c(-1,0,2000,10000,350000))
+levels(spdata$chg.size) <- c("zero","low","med","high")
+boxplot(Cur.Bal~chg.size, data=spdata[spdata$fully.paid=="no",], xlab="Total Charge Level", ylab="Current Balance $")
+```
+
+To see what we're dealing with, we also use the "Current Outstanding Balance" to create a new variable "Balance Size" using the following rules:
+1. "zero", where total charges is smaller or equal to 0
+2. "low", where total charges is between 0 and 1,000
+3. "med", where total charges is between 1,000 and 2,500
+4. "high", where total charges is between 23,000
+
+```{r fig.width=5, fig.height=5}
+summary(spdata$Cur.Bal)
+spdata$bal.size <- cut(spdata$Cur.Bal, breaks = c(-200,0,1000,2500,23000))
+levels(spdata$bal.size) <- c("zero","low","med","high")
+boxplot(Cur.Bal~bal.size, data=spdata, xlab="Current Outstanding Balance Level", ylab="Current Balance $")
+```
+
+Looking at these charts, we decided to focus our time and energy on where the "Total Charge Size" equal to "low", where total charge is under $2,000, as it is a more manageble size to analyze without too much outliers skewing the data.  Meanwhile, we think the same methodology conducted in this report could also apply to higher balance accounts as well, although there may be a factor that the higher the balance, the harder it will get patient to pay outstanding balances in full; however, we cannot be 100% sure of that statement until we've analyze the data using higher balance accounts.
+
+To take a look at the data we'll be dealing with using "Total Charge Size" equal to "low", we use the following:
+
+```{r fig.width=5, fig.height=5}
+sum(spdata$chg.size=="low" & spdata$fully.paid=="yes")
+sum(spdata$chg.size=="low" & spdata$fully.paid=="no")
+hist(spdata$Cur.Bal[which(spdata$chg.size=="low" & spdata$fully.paid=="no")], 100, main = "Histogram of Outstanding Balance Accounts", xlab="Outstanding Balance")
+```
+
+As result we have a total of 1893 records of zero balance and 560 records of non-zero balances.  Proportionally, we now have a smaller pool of non-zero balance accounts to work with; however, that was expected as people may likely to pay their bill in full when the total charged balances are small.  Looking at the histogram of all the non-zero balance accounts, we are comfortable moving forward.  Finally, we extracted the data using a new data.frame `sp` for most of the analysis.
+
+```{r}
+sp <- spdata[which(spdata$chg.size=="low"),]
+sp$chg.size <- "low"
+boxplot(Cur.Bal~chg.size, data=sp[sp$Cur.Bal!=0,], Main="Final Data", ylab="Current Balance $")
+```
+
+#### 2.2 Correlation exploration
+
+Using a series of `pairs(sp[a,b,c,d,e])` on all of the imported data, we identified some variables that looked like they have some sort of correlations with one of the two response variable "Current Balance".  These variables are:
+
+- Col 6: "Hospital Service"
+- Col 12: "Total Charge Balance"
+- Col 15: "Total Charge Adjustment"
+- Col 17: "Attending MD"
+- Col 23: "Whether Filed Bankrupty Before"
+- Col 24: "Time Previous Balanes Went to Bad Debt"
+- Col 28: "Model Score"
+- Col 29: "Estimated Household Income"
+- Col 30: "Estimated Househoold Size"
+- Col 31: "Estimated FPL"
+
+```{r fig.width=7, fig.height=7}
+pairs(sp[c(6,17,9)])
+pairs(sp[c(12,15,9)])
+pairs(sp[c(23,24,9)])
+pairs(sp[c(28,30,9)])
+pairs(sp[c(29,31,9)])
+```
+
+Thinking through this, we can eliminate "Total Charge Balance" and "Total Charge Adjustment".  We decided to eliminate "Total Charge Balance" becasue Total Charges may just be something hospital arbitrarily charged that may or may not be seen by the patient.  All things being equal, it makes sense that for someone who doesn't pay, the outstanding balance will be positively directly related to the total charged amount; so seeing a correlation doesn't mean much here.  We decided to eliminate "Total Charge Adjustment" because of the same reasons; in addition, we do not know whether someone has an zero-balance account because of the adjustment or vice versa. Finally, there also seems to be a correlation between total charged amount and total adjustment (note that total adjustment is negative), so it would not been fair to us "Total Charge" as the predictor of "Current Balance" without bringing in "Total Adjustment" or vice versa.  As stated, we would like to stick to single predictor for this report.
+
+Next, we also eliminated "Attending MD"" as the variable only contains their ID number, so it will not provide any meanings or contents to our results.  Finally, we decided to only use either "Estimated FPL (Federal Poverty Level)" or "Household Income" as they're obviously positively correlated for obvious reason.
+
+### Part 3 - Data Analysis
+
+While all these data look interesting.  We picked a few columns that look the most interesting (and may be the most obvious) for our analysis.  In addition, we'll make the assumption that if someone doesn't pay their bill in full at the time the data is gathered, the hospital will not be able to collect the outstanding balance form the patient and should be considered as bad debt.
+
+#### 3.1 Bankruptcy
+
+First we take a look at the variable whether someone had filed for bankruptcy, as it may be the most obvious variable whether someone is able to pay their bills in general.  We first looked at a simple table and conduct the Chi-Square test on the two factor variables "Filed for Bankruptcy" and "Whether Paid Bill in Full".
+
+```{r}
+summary1 <- table(sp$fully.paid,sp$Bankruptcy)
+colnames(summary1)<-c("Unknown","No Bankruptcy","Has Bankruptcy")
+rownames(summary1)<-c("Zero Balance", "Non-zero Balance")
+summary1
+chisq.test(summary1)
+(53/(108+53))/(415/(1645+415))-1
+```
+
+As the p-value shown in Chi-Square test is close to zero, we can safely say that whether someone paid their bill in full is dependend on whether that patient's gaurentor filed a bankruptcy before.  In this particular dataset, we can see that the risk of someone not paying thier bill in full is raised by 63.4 percent.  This is not a surpris, and logically speaking we would probably expect the number to be much higher if the hospitals do not offer charity programs (as most hospitals do).
+
+#### 3.2 Estimated Household Size
+
+Next we take a look at Estimated Household Size.  We think this information is probably gathered by sending patient's guarantor information to the credit scoring bureau as oppose to self-reported.  Similar to "Bankruptcy", we look at the Chi-Square Test with the same response variable "Whether Paid in Full" .
+
+```{r fig.width=6, fig.height=6}
+summary2 <- table(sp$fully.paid,as.factor(sp$Est.Household.Size))
+colnames(summary2)<-c(1:9)
+rownames(summary2)<-c("Zero Balance", "Non-zero Balance")
+summary2
+chisq.test(summary2)
+
+summary9<-summary2
+summary9[1,]<-summary9[1,]/(summary9[1,]+summary9[2,])
+summary9[2,]<-1 - summary9[1,]
+
+rownames(summary9)<-c("% of Zero Balance", "% of Non-zero Balance")
+barplot(summary9, main="Percentage of Paid in Full vs. Not Paid In Full", xlab="Number of Estimated Household Size", ylab="% of zero vs. non-zero balances", 
+col=c("cornflowerblue","coral"), legend = rownames(summary9))
+```
+
+The chi-square test here actually suggested that the household size matters.  Looking at the chart, it seems that the larger the household size, the more likly someone will pay their hospital bill in full (with the exception of the single outlier of household size = 9).  This may be due to larger household size has larger income due to multiple income stream, or that larger family can seek financial support easier from each other.  To take a closer look at whether there's some interactions between financial income and household size, we use the following - and the result indicated that t would seems that the income level only increase with number of household (up to the size of 6 anyway).
+ 
+```{r}
+boxplot(sp$Est.Household.Income~sp$Est.Household.Size, xlab="Estimated Household Size", ylab="Estimated Household Income")
+summary(lm(Est.Household.Income~Est.Household.Size, data=sp))
+```
+
+While each additional household member may contribute to additional HOusehold Income, the incremental $6,315 per person is somewhat marginal compared to the mean of $41,530, and perhaps that's why we see a R-sqaured of 0.106.
+
+#### 3.3 Estimated Household Income
+
+Knowing the above, we then continue to investigate whether Estimated Household Income has a strong effect on paying their hospital bills.  In this analysis, we do not know how to use a quantitative variable to predict a qualitative variable.  Therefore, we use the "Current Outstanding Balance" as our response variable for the purpose of observing a trend.
+
+```{r fig.width=6, fig.height=6}
+with(sp, plot(Cur.Bal~Est.Household.Income, xlab="Estimated Household Income", ylab="Current Outstanding Balance"))
+abline(lm(Cur.Bal~Est.Household.Income, data=sp))
+summary(lm(sp$Cur.Bal~sp$Est.Household.Income))
+boxplot(sp$Est.Household.Income~sp$fully.paid, xlab="Zero Outstanding Balance", ylab="Estimated Household Income")
+```
+
+Surprisingly we found that the "Estiamted Household Income" have little predictability on the "Current Outstanding Balance" in this particular dataset.  Potentially, this means that the "Current Outstanding Balance" is not a good response variable to use or that most low-income family receive charity from the hospitals so that it "even out" the playing field (or perhaps both).  It may also be because we are only analyzing small total charged amount, making it indifference to the the variable of household income.
+
+#### 3.4 Hospital Services
+
+Next, we take a look a the Hospital Services.  Even though we do not have a "mapping table" to help us understand every single acronym listed here; however, some of them are quite obvious so we believe analyzing this variable can still produce some value.
+
+```{r}
+summary3 <- table(sp$fully.paid,sp$Hosp.Service)
+colnames(summary3)<-c("AMB","CAR","CCU","CMP","EMR","ENT","EYE","FPR","GAS","GYN","HOM","HOS","ICU","MED","NEU","NSU","NUR","OBS","ONC","ORT","PAN","PED","PLS","POD","PSY","QCP","QCS","REH","SUR","TSU","URO","USA")
+rownames(summary3)<-c("Zero Balance", "Non-zero Balance")
+summary3
+chisq.test(summary3)
+```
+
+Due to insufficient data, we cannot determine whether we can reject the null hypothesis that they're independent from each other.  Therefore, we used all the data available to us to conduct the chi-square test in this case - data.frame of `spdata`.
+
+```{r}
+summary4 <- table(spdata$fully.paid,spdata$Hosp.Service)
+colnames(summary4)<-colnames(summary3)
+rownames(summary4)<-rownames(summary3)
+summary4
+chisq.test(summary4)
+```
+
+We got a p-value that is very close to zero, suggesting that the two vailables are dependent.  This makes good sense, as people in general are more willing to pay for certain services such as Home Health Services (HOM) and Pediatrics (PED) as oppose to Ambulatory care/services (AMB) and Emergency Serices (EMR) because the latter often felt that they did not have a choice to go to the hospital.  In addition, some services might charge higher than the others, causing people not able able or unwilling to fully pay their balances.
+
+#### 3.5 Previous Time to Bad Debt
+
+Finally, we looked into how many time the patient had previous records of having hospital bills written off as bad debt.  Before the analysis, it is probably safe the assume that if someone had bills that went into bad debt before, it is likely that the person will go into bad debt again.  Note that this information may not be recorded or calculated in every hospital's patient accounting system; nor does the hospital would have the perfect record of how many times each recurring patient had generated bad debt balances.
+
+Similar to Household sizes.  We decided to use the full data `spdata` as we don't think using the subset `sp` would have enough data to generate significant result using Chi-Square Test.
+
+```{r}
+summary5 <- table(spdata$fully.paid,spdata$Previous.Times.to.Bad.Debt)
+rownames(summary5)<-c("Zero Balance", "Non-zero Balance")
+summary5
+chisq.test(summary5)
+```
+
+Looking at the summary table, we noticed that the number of someone generated bad debt balance that's equal or greater than 8 become very rare; therefore, we think it would be better to group 8 and above into 7 using the below `for` loop procedure.
+
+```{r}
+summary6<-summary5
+for(i in 9:20) {summary6[,8]<-summary6[,8]+summary6[,i]}
+summary6<-summary6[,-(9:20)]
+summary6
+chisq.test(summary6)
+```
+
+As suspected, the Chi-square test suggested that there's a dependency between the two variables.  Next we plots a few more charts to better visualize the data.
+
+```{r}
+summary6[1,]<-summary6[1,]/(summary6[1,]+summary6[2,])
+summary6[2,]<-1 - summary6[1,]
+rownames(summary6)<-c("% of Zero Balance", "% of Non-zero Balance")
+colnames(summary6)<-c(0:6,"7+")
+barplot(summary6, main="Percentage of paid in full vs. Not paid In full", xlab="Previous Time to Bad Debt", ylab="% of zero vs. non-zero balances", 
+col=c("cornflowerblue","coral"), legend = rownames(summary6))
+boxplot(sp$Previous.Times.to.Bad.Debt~sp$fully.paid, xlab="Zero Outstanding Balance", ylab="Previous Times of Bad Debt")
+```
+```{r fig.width=6, fig.height=6}
+boxplot(sp$Cur.Bal~sp$Previous.Times.to.Bad.Debt, ylab="Current Outstanding Balance", xlab="Previous Times of Bad Debt")
+with(sp, plot(Cur.Bal~Previous.Times.to.Bad.Debt, xlab="Previous.Times.to.Bad.Debt", ylab="Current Outstanding Balance"))
+abline(lm(Cur.Bal~Previous.Times.to.Bad.Debt, data=sp))
+summary(lm(sp$Cur.Bal~sp$Previous.Times.to.Bad.Debt))
+```
+
+As the bar graph above suggested, the more someone had a bad debt balance, the more likely that he or she will generate more bad debt.  The first boxplot also confirmed that there is a noticeable difference between zero balance accounts and non-zero balance accounts.  As the "Bankruptcy" variable, this result may be more obvious if there weren't any charity program offered by the hospital.
+
+---
+### Part 4. Conclusion & Next Step
+
+#### 4.1 Recommendation
+Among all the predictor we analyzed, we think that the number of "previous times to bad debt" would be the most valuable predictor to determine if someone is going to fully pay their hospital bills within time.  Even having just one previous bad debt balance will significantly increase someone's risk of not paying their hospital bills in full!
+
+Next to "Previous Time to Bad Debt", I think "Bankruptcy" is also a good indication whether someone will pay thier hospital bills.  Undersanding that our analysis is limited in term of the size of data and potentially inaccurate and missing data as well as simplicity of the analyzing methods.
+
+#### 4.2 What's Next
+While we do not have the resources do conduct further analysis, many (almost infinite!) things could still be done.  For example, the data can be broken out differently using different income level, total balances, or total adjustment. (or by clustering the data to see how to better break it up).  In additional, multi-way regression could also be used among various variables to predict the response variables as well.  For example, a closer look of the total balance, total adjustment, and current blaance while excluding low-income family who qualified for charity would likely produce interesting results.
+
+
+#### 4.4 Final Words
+We hope our report provided some values.  Due to the large size of variables and records, it is not possible to analyze every single aspect of the data thoroughly using methods demonstrated in this report.  The proper way of anazlying such data would need to utilizing proper data mining techniques to help detemrine which variables and the weight of each variables could be the most helpful predictor of whether someone will fully pay their bills.  In fact, that is exactly what the attribute "Model Score" is about!!
